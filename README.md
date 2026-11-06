@@ -21,6 +21,8 @@ Pushing to `main` deploys automatically. A systemd timer runs `deploy/deploy.sh`
 4. Local edits or commits on the server that aren't on GitHub make it skip that repo. It never overwrites them.
 5. A failed deploy is retried every minute, then every 15 minutes after three failures of the same commit. There's no automatic rollback, so the fix is another push.
 
+To roll back, `git revert` the bad commit and push. Because images are pinned, that also restores the previous image versions.
+
 Logs: `journalctl -u homelab-deploy`
 
 If a compose file is deleted or its folder renamed, the old containers keep running. The script writes the cleanup command to `~/.local/state/homelab-deploy/attention`. Delete that file once you've handled it.
