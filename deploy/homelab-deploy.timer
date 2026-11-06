@@ -1,0 +1,11 @@
+[Unit]
+Description=Run homelab-deploy every minute
+
+[Timer]
+OnBootSec=2min
+# Measured from when the previous run finished, so runs never pile up.
+OnUnitInactiveSec=1min
+AccuracySec=5s
+
+[Install]
+WantedBy=timers.target

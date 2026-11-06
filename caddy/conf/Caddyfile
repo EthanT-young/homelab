@@ -1,0 +1,18 @@
+ethantyoung.com, www.ethantyoung.com {
+	root * /site
+	file_server {
+		hide .*
+	}
+}
+
+status.ethantyoung.com {
+	reverse_proxy uptime-kuma:3001
+}
+
+ai.ethantyoung.com {
+	reverse_proxy open-webui:8080
+}
+
+convert.ethantyoung.com {
+	reverse_proxy convert-app:80
+}

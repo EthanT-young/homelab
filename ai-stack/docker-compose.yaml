@@ -1,0 +1,30 @@
+services:
+  ollama:
+    # Ollama 0.32.1
+    image: ollama/ollama:0.32.1@sha256:6345fbc18bd73a1e16404be681dbc6fd291a027cab43ed541abe78c4c81051b0
+    container_name: ollama
+    restart: unless-stopped
+    environment:
+      - OLLAMA_KEEP_ALIVE=0
+    volumes:
+      - ./data/ollama:/root/.ollama
+    networks:
+      - production-network
+
+  open-webui:
+    # Open WebUI 0.10.2 (main build ecd48e2)
+    image: ghcr.io/open-webui/open-webui:main@sha256:a26effeb220e132482bf7e0560b3404843e7bc40d23051144e062960df8df6b0
+    container_name: open-webui
+    restart: unless-stopped
+    environment:
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - ENABLE_SIGNUP=false
+      - WEBUI_SECRET_KEY_FILE=/app/backend/data/.webui_secret_key
+    volumes:
+      - ./data/webui:/app/backend/data
+    networks:
+      - production-network
+
+networks:
+  production-network:
+    external: true

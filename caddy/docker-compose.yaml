@@ -1,0 +1,21 @@
+services:
+  caddy:
+    # v2.11.4
+    image: caddy:2.11.4@sha256:844f60b64e4724a5aa8245e019dace0d3f199f7433ce6c57676cb30a920dbad9
+    container_name: caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      # Mount the directory (not the file) so git updates are picked up on reload.
+      - ./conf:/etc/caddy:ro
+      - ../portfolio/public:/site:ro
+      - ./caddy_data:/data
+      - ./caddy_config:/config
+    networks:
+      - production-network
+
+networks:
+  production-network:
+    external: true

@@ -1,0 +1,39 @@
+# homelab: allowlist. Ignore everything, then opt specific files back in.
+# Other project repos (portfolio, convert, ...) live in sibling folders and stay ignored.
+/*
+!/.gitignore
+!/README.md
+
+!/deploy/
+
+!/caddy/
+/caddy/*
+!/caddy/docker-compose.yaml
+!/caddy/conf/
+
+!/ai-stack/
+/ai-stack/*
+!/ai-stack/docker-compose.yaml
+
+!/uptime-kuma/
+/uptime-kuma/*
+!/uptime-kuma/docker-compose.yaml
+
+# Never commit AI-assistant / design-tool files.
+CLAUDE*.md
+[Cc]laude*
+.claude/
+.mcp.json
+AGENTS.md
+GEMINI.md
+.gemini/
+.cursor/
+.cursorrules
+.aider*
+.github/copilot-instructions.md
+.impeccable/
+DESIGN.md
+PRODUCT.md
+
+# Server-local opt-in marker for deploy/deploy.sh; never committed.
+.deploy
