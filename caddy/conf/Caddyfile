@@ -1,7 +1,15 @@
 ethantyoung.com, www.ethantyoung.com {
-	root * /site
-	file_server {
-		hide .*
+	# Code Visualizer app (code-visualizer repo), reached through its Unix socket.
+	redir /projects/code-visualizer/app /projects/code-visualizer/app/
+	handle_path /projects/code-visualizer/app/* {
+		reverse_proxy unix//codeviz/codeviz.sock
+	}
+
+	handle {
+		root * /site
+		file_server {
+			hide .*
+		}
 	}
 }
 

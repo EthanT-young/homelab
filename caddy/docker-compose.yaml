@@ -11,6 +11,7 @@ services:
       # Mount the directory (not the file) so git updates are picked up on reload.
       - ./conf:/etc/caddy:ro
       - ../portfolio/public:/site:ro
+      - ../code-visualizer/socket:/codeviz:ro
       - ./caddy_data:/data
       - ./caddy_config:/config
     networks:
