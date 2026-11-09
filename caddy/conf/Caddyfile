@@ -5,6 +5,14 @@ ethantyoung.com, www.ethantyoung.com {
 		reverse_proxy unix//codeviz/codeviz.sock
 	}
 
+	# UNLV Enrollment Viewer (myUNLV-class-scraper repo). The trailing-slash
+	# redirect matters: the page loads data/ and api/ with relative URLs.
+	redir /projects/unlvEnrollmentViewer /projects/unlvEnrollmentViewer/ 308
+	handle_path /projects/unlvEnrollmentViewer/* {
+		encode zstd gzip
+		reverse_proxy unlv-enrollment-viewer:8080
+	}
+
 	handle {
 		root * /site
 		file_server {
