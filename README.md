@@ -48,3 +48,37 @@ Optional heartbeat: put `DEPLOY_PUSH_URL=<Uptime Kuma push URL>` in `~/.config/h
 4. Add its route to `caddy/conf/Caddyfile` here and push.
 
 For a private repo, add a read-only deploy key on GitHub, clone over SSH, and point that repo at its key: `git config core.sshCommand "ssh -i ~/.ssh/<name>_deploy -o IdentitiesOnly=yes -o BatchMode=yes"`.
+
+## Host firewall changes
+
+Changes made to the server outside Docker, with how to undo each one.
+
+### Containers can't reach Oracle Cloud's link-local services
+
+Installed by `host/docker-block-metadata.sh` (run once by hand with sudo). Containers and image builds can't reach 169.254.0.0/16, which holds the instance metadata service at 169.254.169.254 (instance details, user-data, and credentials if an instance principal is ever set up) and other Oracle services. DNS to 169.254.169.254 still works, because it's also Oracle's DNS resolver and every build needs it. The host itself isn't affected: its DNS, NTP and the Oracle agent don't pass through these rules, and neither do Docker's image pulls.
+
+What's on the server:
+
+| Path | What it is |
+|---|---|
+| `/usr/local/sbin/docker-block-metadata` | Helper. `add` builds the rules, `remove` deletes them. Its header repeats the undo steps below. |
+| `/etc/systemd/system/docker-block-metadata.service` | Runs `add` every time Docker starts and `remove` when Docker stops. |
+| iptables chain `DOCKER-METADATA` | The rules: allow DNS (UDP and TCP 53) to 169.254.169.254, reject the rest of 169.254.0.0/16. |
+| A jump in `DOCKER-USER` | Sends container traffic to 169.254.0.0/16 into `DOCKER-METADATA`. |
+
+Nothing goes in `/etc/iptables/rules.v4`.
+
+Check it's working: `systemctl status docker-block-metadata` should say `active (exited)`, and `sudo iptables -S DOCKER-METADATA` should list two RETURN rules and a REJECT.
+
+To undo it:
+
+```sh
+sudo /usr/local/sbin/docker-block-metadata remove            # takes the rules out immediately
+sudo systemctl disable --now docker-block-metadata.service   # stops them coming back
+sudo rm /etc/systemd/system/docker-block-metadata.service /usr/local/sbin/docker-block-metadata
+sudo systemctl daemon-reload
+sudo iptables -S DOCKER-USER                                 # no DOCKER-METADATA line should be left
+```
+
+If container DNS ever breaks and you suspect these rules, the first line alone is enough to rule them out. Running `bash host/docker-block-metadata.sh` again reinstalls everything.
+

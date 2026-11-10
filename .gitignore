@@ -19,6 +19,8 @@
 /uptime-kuma/*
 !/uptime-kuma/docker-compose.yaml
 
+!/host/
+
 # Never commit AI-assistant / design-tool files.
 CLAUDE*.md
 [Cc]laude*
