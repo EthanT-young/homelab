@@ -1,0 +1,54 @@
+{
+  "_comment": "Exceptions to deploy/compose_policy.py, per project repo (folder name). Every deployed project repo must be listed. names: service, container and alias names allowed on shared networks. images: names a repo may give images it builds. networks/volumes: fixed (unprefixed) names the repo may create. cap_add: capabilities it may add. binds: folders (relative to the repo root) it may bind-mount. allow_net_raw / allow_no_limits: temporary exemptions from requiring cap_drop NET_RAW on shared networks and cpus/mem_limit/pids_limit.",
+  "external_networks": [
+    "production-network"
+  ],
+  "repos": {
+    "code-visualizer": {
+      "names": [
+        "code-visualizer"
+      ],
+      "cap_add": [
+        "SETUID",
+        "SETGID",
+        "CHOWN",
+        "KILL",
+        "DAC_OVERRIDE",
+        "FOWNER"
+      ],
+      "binds": [
+        "socket"
+      ]
+    },
+    "convert": {
+      "names": [
+        "converter",
+        "convert-app"
+      ],
+      "binds": [
+        "site"
+      ],
+      "allow_net_raw": true,
+      "allow_no_limits": true
+    },
+    "myUNLV-class-scraper": {
+      "names": [
+        "unlv-enrollment-viewer"
+      ],
+      "images": [
+        "unlv-enrollment-viewer"
+      ]
+    },
+    "kibitz-chess": {
+      "names": [
+        "kibitz"
+      ],
+      "images": [
+        "kibitz"
+      ],
+      "networks": [
+        "kibitz-internal"
+      ]
+    }
+  }
+}

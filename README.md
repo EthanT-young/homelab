@@ -19,6 +19,7 @@ Pushing to `main` deploys automatically. A systemd timer runs `deploy/deploy.sh`
 
 1. It looks at this repo and every git repo in a subfolder, but only deploys repos with a `.deploy` file created on the server. That file is gitignored and the script refuses a committed one, so cloning someone else's project here won't run it.
 2. It checks the incoming commit in a scratch copy first: `docker compose config` for each changed project, and `caddy validate` with the Caddy image that commit pins. If the check fails, the server's files stay as they were.
+   Project repos (everything except this one) also have to pass `deploy/compose_policy.py`, because anyone who can get a commit onto their `main` controls their compose file. It refuses anything that reaches outside the container: privileged mode (including in `post_start` hooks), added capabilities, host networking or namespaces, published ports, bind mounts other than the folders listed for that repo, env files outside the repo, other projects' volumes and networks, names that would shadow another service on a shared network, `include`, and any compose key it doesn't know. Every service also needs `cpus`, `mem_limit` and `pids_limit`, and containers on a shared network must drop `NET_RAW`. A project repo must be listed in `deploy/compose-policy.json`, which also holds its exceptions, and its compose file must sit at the repo root; the compose project is always named after the repo's folder on the server, so a repo can't pose as another project. A refused commit leaves the server untouched, and if it's still refused on the third try it goes in the attention file. Compose runs for project repos with that fixed name and file and an empty environment, and the check runs again in the real checkout right before `up`.
 3. It fast-forwards to `origin/main` and runs `docker compose up -d --build --remove-orphans` for each changed project, then hot-reloads Caddy. Project repos go before this one, so a new service is already up when its route goes live. A repo the script hasn't seen before gets deployed in full.
 4. Local edits or commits on the server that aren't on GitHub make it skip that repo. It never overwrites them.
 5. A failed deploy is retried every minute, then every 15 minutes after three failures of the same commit. There's no automatic rollback, so the fix is another push.
@@ -41,8 +42,9 @@ Optional heartbeat: put `DEPLOY_PUSH_URL=<Uptime Kuma push URL>` in `~/.config/h
 
 ### Adding a project
 
-1. Create the repo with a compose file that joins `production-network`, and add `.deploy` to its `.gitignore`.
-2. `git clone https://github.com/EthanT-young/<name>.git /home/ethan/docker/<name>`, then `touch /home/ethan/docker/<name>/.deploy`. The next run starts it.
-3. Add its route to `caddy/conf/Caddyfile` here and push.
+1. Create the repo with a compose file that joins `production-network` (or its own internal network that Caddy joins), and add `.deploy` to its `.gitignore`.
+2. Add the repo to `deploy/compose-policy.json` here: its container and network names, the names of images it builds, and any folders it bind-mounts. Push that first: the deployer reads the policy from this repo, so a project it doesn't know yet is refused.
+3. `git clone https://github.com/EthanT-young/<name>.git /home/ethan/docker/<name>`, then `touch /home/ethan/docker/<name>/.deploy`. The next run starts it.
+4. Add its route to `caddy/conf/Caddyfile` here and push.
 
 For a private repo, add a read-only deploy key on GitHub, clone over SSH, and point that repo at its key: `git config core.sshCommand "ssh -i ~/.ssh/<name>_deploy -o IdentitiesOnly=yes -o BatchMode=yes"`.

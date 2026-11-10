@@ -8,6 +8,10 @@
 #   - The incoming commit is validated in a scratch copy BEFORE the server's
 #     files change: `docker compose config` for changed projects, and
 #     `caddy validate` (with the Caddy image that commit pins) for Caddy changes.
+#   - Project repos (everything but homelab) must also pass compose_policy.py:
+#     no privileged mode, host namespaces, bind mounts outside the repo,
+#     docker.sock and so on, unless compose-policy.json allows it. It runs on
+#     the scratch copy and again in the real checkout right before `up`.
 #   - Then fast-forward and `docker compose up -d --build --remove-orphans` for
 #     changed projects, plus a Caddy hot reload.
 #   - Never overwrites server-side work: uncommitted edits or commits that are
@@ -27,6 +31,11 @@
 main() {
   set -uo pipefail
   export GIT_TERMINAL_PROMPT=0
+  # Never run hooks or fsmonitor from a checkout's .git: a project's container
+  # must not be able to get code run as this user through git.
+  export GIT_CONFIG_COUNT=2 \
+    GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0=/dev/null \
+    GIT_CONFIG_KEY_1=core.fsmonitor GIT_CONFIG_VALUE_1=false
 
   BASE="${DEPLOY_BASE:-/home/ethan/docker}"
   STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/homelab-deploy"
@@ -100,6 +109,84 @@ compose_dir_for() {
     [[ "$dir" == "$root" ]] && return 1
     dir="$(dirname "$dir")"
   done
+}
+
+# The compose file in $1, in the order compose itself prefers. Fails if there is
+# more than one (compose would quietly pick one) or an override file (`-f`
+# would quietly ignore it).
+compose_file_in() {
+  local dir="$1" f found=()
+  for f in compose.yaml compose.yml docker-compose.yaml docker-compose.yml; do
+    [[ -f "$dir/$f" ]] && found+=("$dir/$f")
+  done
+  for f in compose.override.yaml compose.override.yml docker-compose.override.yaml docker-compose.override.yml; do
+    [[ -e "$dir/$f" ]] && return 1
+  done
+  (( ${#found[@]} == 1 )) || return 1
+  echo "${found[0]}"
+}
+
+# Compose project name for a folder ("$repo/." for a compose file at the repo
+# root), normalized the way compose does it.
+project_name_for() {
+  local dir="$1"
+  while [[ "$dir" == */. || "$dir" == */ ]]; do dir="${dir%.}"; dir="${dir%/}"; done
+  basename "$dir" | tr 'A-Z' 'a-z' | tr -cd 'a-z0-9_-'
+}
+
+# Every `docker compose` call for a project repo goes through here, so the
+# policy check sees exactly what `up` will do: a fixed project name and compose
+# file (a committed .env can't swap them via COMPOSE_PROJECT_NAME/COMPOSE_FILE),
+# and none of the deployer's environment for the file to interpolate.
+# $1 timeout in seconds, $2 folder, $3 project name, $4 compose file.
+project_compose() {
+  local secs="$1" dir="$2" project="$3" file="$4"; shift 4
+  (cd "$dir" && timeout "$secs" env -i PATH="$PATH" HOME="$HOME" \
+     docker compose -p "$project" -f "$file" "$@")
+}
+
+# compose_policy.py on one project repo. $1 repo name, $2 repo root to confine
+# paths to (scratch copy or real checkout), $3 project folder in that root,
+# $4 the real checkout's path, $5 scratch dir.
+policy_check() {
+  local rname="$1" root="$2" dir="$3" real="$4" scratch="$5" file out project w
+  # Only a compose file at the repo root, and the project is named after the
+  # server's folder for the repo. A subfolder name comes from the repo's own
+  # commits, so `ai-stack/compose.yaml` would otherwise run as homelab's
+  # ai-stack project (and --remove-orphans would delete its containers).
+  if [[ "$(cd "$dir" && pwd -P)" != "$(cd "$root" && pwd -P)" ]]; then
+    echo "policy: compose files are only allowed at the repo root"
+    return 1
+  fi
+  project="$(project_name_for "$real")"
+  if [[ ! "$project" =~ ^[a-z0-9][a-z0-9_-]*$ ]]; then
+    echo "policy: bad compose project name '$project'"
+    return 1
+  fi
+  # Containers already labelled with this project must belong to this checkout.
+  local owners
+  if ! owners="$(timeout 60 docker ps -a --filter "label=com.docker.compose.project=$project" \
+                   --format '{{.Label "com.docker.compose.project.working_dir"}}')"; then
+    echo "policy: could not list containers to check who owns project '$project'"
+    return 1
+  fi
+  while IFS= read -r w; do
+    if [[ -n "$w" && "$w" != "$real" ]]; then
+      echo "policy: compose project '$project' already belongs to $w"
+      return 1
+    fi
+  done <<< "$owners"
+  if ! file="$(compose_file_in "$dir")"; then
+    echo "policy: expected exactly one compose file, and no override file, at the repo root"
+    return 1
+  fi
+  if ! out="$(project_compose 120 "$dir" "$project" "$file" config --format json 2>&1 >"$scratch/config.json")" \
+     || ! out+="$(project_compose 120 "$dir" "$project" "$file" config --format json --no-interpolate 2>&1 >"$scratch/raw.json")"; then
+    echo "invalid compose config: $out"
+    return 1
+  fi
+  timeout 60 python3 -I "$BASE/deploy/compose_policy.py" "$BASE/deploy/compose-policy.json" \
+    "$rname" "$root" "$file" "$project" "$scratch/config.json" "$scratch/raw.json"
 }
 
 deploy_repo() {
@@ -225,9 +312,33 @@ _apply() {
   # 1. Validate the incoming commit before touching the server's files.
   local ok=1
   for p in "${!projects[@]}"; do
-    if ! out="$(cd "$tree/$p" && timeout 120 docker compose config -q 2>&1)"; then
-      log "$name" "error: invalid compose config in $p: $out"
-      ok=0
+    if [[ "$repo" == "$BASE" ]]; then
+      if ! out="$(cd "$tree/$p" && timeout 120 docker compose config -q 2>&1)"; then
+        log "$name" "error: invalid compose config in $p: $out"
+        ok=0
+      fi
+    else
+      # The scratch copy lacks the checkout's server-local .env, which the
+      # compose file may interpolate from; `up` will see it, so the check must too.
+      # Only when the incoming commit has no .env of its own (if it does, the
+      # check sees that one), and never through a symlink.
+      if [[ -f "$repo/$p/.env" && ! -L "$repo/$p/.env" ]] \
+         && [[ ! -e "$tree/$p/.env" && ! -L "$tree/$p/.env" ]]; then
+        cp --no-dereference -- "$repo/$p/.env" "$tree/$p/.env"
+      fi
+      if ! out="$(policy_check "$name" "$tree" "$tree/$p" "$repo" "$work" 2>&1)"; then
+        log "$name" "error: ${target:0:7} failed the compose check:"
+        echo "$out" | sed 's/^/    /'
+        # A project commit can land a minute before the homelab policy change it
+        # needs (homelab deploys last), so only raise an alert on the third try.
+        local prior=0
+        [[ "${fsha:-}" == "$target" ]] && prior="${fcount:-0}"
+        local msg="${target:0:7} refused by the compose policy (see journalctl -u homelab-deploy); fix the repo or deploy/compose-policy.json"
+        if (( prior >= 2 )); then
+          grep -qF -- "[$name] $msg" "$STATE_DIR/attention" 2>/dev/null || attention "$name" "$msg"
+        fi
+        ok=0
+      fi
     fi
   done
   if (( caddy && ok )); then
@@ -259,7 +370,27 @@ _apply() {
   # 3. Apply. `up -d` only recreates services whose config or image changed.
   for p in "${!projects[@]}"; do
     log "$name" "applying $p"
-    if ! (cd "$repo/$p" && timeout 1200 docker compose up -d --build --pull missing --remove-orphans); then
+    if [[ "$repo" == "$BASE" ]]; then
+      if ! (cd "$repo/$p" && timeout 1200 docker compose up -d --build --pull missing --remove-orphans); then
+        log "$name" "error: docker compose up failed in $p"
+        ok=0
+      fi
+      continue
+    fi
+    # Check again in the real checkout: its server-local .env, data folders and
+    # symlinks are what `up` will actually see.
+    local project file
+    if ! out="$(policy_check "$name" "$repo" "$repo/$p" "$repo" "$work" 2>&1)"; then
+      log "$name" "error: ${target:0:7} failed the compose check in the checkout; not starting it:"
+      echo "$out" | sed 's/^/    /'
+      local msg="${target:0:7} failed the compose check in the checkout; its containers were not changed"
+      grep -qF -- "[$name] $msg" "$STATE_DIR/attention" 2>/dev/null || attention "$name" "$msg"
+      ok=0
+      continue
+    fi
+    project="$(project_name_for "$repo")"
+    file="$(compose_file_in "$repo/$p")"
+    if ! project_compose 1200 "$repo/$p" "$project" "$file" up -d --build --pull missing --remove-orphans; then
       log "$name" "error: docker compose up failed in $p"
       ok=0
     fi
