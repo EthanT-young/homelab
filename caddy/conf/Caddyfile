@@ -13,6 +13,19 @@ ethantyoung.com, www.ethantyoung.com {
 		reverse_proxy unlv-enrollment-viewer:8080
 	}
 
+	# Kibitz chess game review (kibitz-chess repo): static files served by its
+	# own container. Its pages use relative URLs, hence the trailing-slash redirect.
+	redir /projects/kibitz /projects/kibitz/ 308
+	handle_path /projects/kibitz/* {
+		# The app shares this origin with the other sites, so it may not install
+		# a service worker (which could take over pages outside its folder).
+		@sw header Service-Worker *
+		respond @sw 403
+		reverse_proxy kibitz:8080 {
+			header_down -Service-Worker-Allowed
+		}
+	}
+
 	handle {
 		root * /site
 		file_server {

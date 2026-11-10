@@ -16,7 +16,12 @@ services:
       - ./caddy_config:/config
     networks:
       - production-network
+      - kibitz-internal
 
 networks:
   production-network:
+    external: true
+  # Created by the kibitz-chess project (internal: no route out). Kibitz is only
+  # on this network, so only Caddy can reach it.
+  kibitz-internal:
     external: true

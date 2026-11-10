@@ -9,6 +9,7 @@ Docker Compose files for the services behind ethantyoung.com. Everything runs on
 | Open WebUI + Ollama | [ai.ethantyoung.com](https://ai.ethantyoung.com) | `ai-stack/` |
 | File converter | [convert.ethantyoung.com](https://convert.ethantyoung.com) | separate repo: [convert](https://github.com/EthanT-young/convert) |
 | Code Visualizer | [ethantyoung.com/projects/code-visualizer/app/](https://ethantyoung.com/projects/code-visualizer/app/) | separate repo: [code-visualizer](https://github.com/EthanT-young/code-visualizer), reached by Caddy through a Unix socket |
+| Kibitz (chess game review) | [ethantyoung.com/projects/kibitz/](https://ethantyoung.com/projects/kibitz/) | separate repo: [kibitz-chess](https://github.com/EthanT-young/kibitz-chess) |
 
 The Caddy config is in `caddy/conf/Caddyfile`. Images are pinned by digest, so upgrading a service means editing its `image:` line.
 
