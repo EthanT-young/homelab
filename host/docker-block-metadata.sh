@@ -72,7 +72,10 @@ ExecStop=/usr/local/sbin/docker-block-metadata remove
 WantedBy=docker.service
 EOF
 sudo systemctl daemon-reload
-sudo systemctl enable --now docker-block-metadata.service
+sudo systemctl enable docker-block-metadata.service
+# restart, not `enable --now`: once the unit is active, `enable --now` does
+# nothing, so a re-run would install new files without applying them.
+sudo systemctl restart docker-block-metadata.service
 systemctl status docker-block-metadata --no-pager | head -3
 sudo iptables -S DOCKER-USER
 sudo iptables -S DOCKER-METADATA

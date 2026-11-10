@@ -80,5 +80,5 @@ sudo systemctl daemon-reload
 sudo iptables -S DOCKER-USER                                 # no DOCKER-METADATA line should be left
 ```
 
-If container DNS ever breaks and you suspect these rules, the first line alone is enough to rule them out. Running `bash host/docker-block-metadata.sh` again reinstalls everything.
+If container DNS ever breaks and you suspect these rules, the first line alone is enough to rule them out. That only lasts until Docker restarts or the server reboots, when the unit adds the rules again; `sudo systemctl restart docker-block-metadata` puts them back sooner. Running `bash host/docker-block-metadata.sh` again reinstalls the files and re-applies the rules.
 
