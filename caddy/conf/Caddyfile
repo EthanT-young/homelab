@@ -1,4 +1,21 @@
+# HSTS: once a browser has seen this over HTTPS, it refuses plain HTTP to these
+# domains (and every subdomain) for a year, so a network attacker can't downgrade
+# a visit. Every subdomain must keep working HTTPS; to back out, send max-age=0
+# for a while before removing it. Deferred (>) so a backend can't override it.
+# A site that adds its own handle_errors (e.g. a custom 404 page) must set the
+# header there too: the more specific handler replaces the one in here.
+(hsts) {
+	header >Strict-Transport-Security "max-age=31536000; includeSubDomains"
+	# Responses that end in an error (e.g. a 404 from file_server) skip the
+	# deferred header above, so set it for them too.
+	handle_errors {
+		header Strict-Transport-Security "max-age=31536000; includeSubDomains"
+	}
+}
+
 ethantyoung.com, www.ethantyoung.com {
+	import hsts
+
 	# Code Visualizer app (code-visualizer repo), reached through its Unix socket.
 	redir /projects/code-visualizer/app /projects/code-visualizer/app/
 	handle_path /projects/code-visualizer/app/* {
@@ -35,13 +52,19 @@ ethantyoung.com, www.ethantyoung.com {
 }
 
 status.ethantyoung.com {
+	import hsts
+
 	reverse_proxy uptime-kuma:3001
 }
 
 ai.ethantyoung.com {
+	import hsts
+
 	reverse_proxy open-webui:8080
 }
 
 convert.ethantyoung.com {
+	import hsts
+
 	reverse_proxy convert-app:80
 }
